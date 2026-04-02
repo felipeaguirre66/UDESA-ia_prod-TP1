@@ -1,4 +1,3 @@
-import pickle
 import mlflow
 import pandas as pd
 from sklearn.ensemble import RandomForestRegressor
@@ -6,16 +5,27 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import r2_score, mean_squared_error
 from src.config import FEATURE_STORE_REPO, PARQUET_PATH#, MODELS_DIR
 
-def train_model():
+def train_model(
+        target: str = 'prod_gas', # prod_gas o prod_pet
+        training_date: str = None,
+        save_as_champion: bool = False
+        ):
     print("Iniciando entrenamiento del modelo...")
     from feast import FeatureStore
 
     store = FeatureStore(repo_path=str(FEATURE_STORE_REPO))
     
     print("Leyendo llaves de entidades desde el parquet...")
+    
+    # default to today if not provided
+    cutoff = pd.Timestamp(training_date) if training_date else pd.Timestamp.now()
+
     raw_df = pd.read_parquet(PARQUET_PATH)
-    entity_df = raw_df[['idpozo', 'fecha', 'prod_gas']].copy()
+    entity_df = raw_df[['idpozo', 'fecha', target]].copy()
     entity_df['fecha'] = pd.to_datetime(entity_df['fecha'])
+    
+    # filter to only data available up to that date
+    entity_df = entity_df[entity_df['fecha'] <= cutoff]
     entity_df = entity_df.rename(columns={'fecha': 'event_timestamp'})
 
     features = [
@@ -35,7 +45,6 @@ def train_model():
     training_df.columns = [c.split('__')[-1] for c in training_df.columns]
     
     # Eliminamos nulos del target (puede haber nulos por las filas "futuras" que agregamos en el offline store para online request)
-    target = 'prod_gas'
     training_df = training_df.dropna(subset=[target])
 
     X = training_df[features]
@@ -66,6 +75,9 @@ def train_model():
         mlflow.log_params(model_params)
         mlflow.log_param("target", target)
         mlflow.log_param("features", ",".join(features))
+        mlflow.log_param("model_type", model_type)
+        mlflow.log_param("data_max_date", str(training_df['event_timestamp'].max()))
+        mlflow.log_param("training_date_cutoff", str(cutoff.date()))
         mlflow.log_param("test_size", 0.2)
 
         eval_model = RandomForestRegressor(**model_params)
@@ -86,14 +98,28 @@ def train_model():
         print("Reentrenando Random Forest con dataset completo...")
         model.fit(X, y)
 
-        mlflow.sklearn.log_model(model, name=run_name)
-
-    # MODELS_DIR.mkdir(parents=True, exist_ok=True)
-    # model_path = MODELS_DIR / f"{fecha}__{model_name}"
+        # saves artifact + registers a new version in the registry
+        mlflow.sklearn.log_model(
+            model,
+            name=run_name,
+            registered_model_name=model_name
+        )
+        
+        if save_as_champion:
+            # find the version that was just created and tag it as champion
+            client = mlflow.MlflowClient()
+            latest_version = client.get_registered_model(model_name).latest_versions[-1].version
+            client.set_registered_model_alias(model_name, "champion", latest_version)
 
     print(f"Modelo guardado en: {run_name}")
     return run_name
 
 
 if __name__ == "__main__":
-    train_model()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--target", type=str, default='prod_gas', help="Target variable to predict (e.g., 'prod_gas' or 'prod_pet')")
+    parser.add_argument("--training_date", type=str, default=None)
+    parser.add_argument("--save_as_champion", type=lambda x: x.lower() == 'true', default=False)
+    args = parser.parse_args()
+    train_model(target=args.target, training_date=args.training_date, save_as_champion=args.save_as_champion)

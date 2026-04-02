@@ -31,7 +31,8 @@ def ml_pipeline():
 
     @task
     def train_model_task():
-        train_model()
+        train_model(target='prod_gas', save_as_champion=True)
+        train_model(target='prod_pet', save_as_champion=True)
 
     # Pipeline: Chain all tasks in order
     start >> download_data_task() >> prepare_offline_store_task() >> apply_feast_task() >> populate_online_store_task() >> train_model_task()

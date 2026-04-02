@@ -41,7 +41,7 @@ def prepare_offline_store():
             records[-1]['prod_pet'] = None
         
     feat_df = pd.DataFrame(records)
-    #TODO: remove this, only for memory issues
+    #TODO: remove this, use only for memory issues
     feat_df = feat_df.sort_values('fecha').groupby('idpozo').tail(5).reset_index(drop=True)
     feat_df.to_parquet(PARQUET_PATH, index=False)
     print(f"Features offline guardadas en {PARQUET_PATH} con {len(feat_df)} filas.")

@@ -16,22 +16,6 @@ def populate_online_store():
     df=latest_df,
   )
   print("Materialización exitosa.")
-  
-  # Demostración
-  print("\n[Online Store] Validando lectura...")
-  pozo_ejemplo = 132879
-  
-  features = store.get_online_features(
-    features=[
-      "well_stats:avg_prod_gas_10m",
-      "well_stats:n_readings"
-    ],
-    entity_rows=[{"idpozo": pozo_ejemplo}]
-  ).to_dict()
-  
-  print(f"Lectura exitosa. Features del pozo {pozo_ejemplo}:")
-  for key, value in features.items():
-    print(f"  {key}: {value[0]}")
 
 def apply_feast():
     result = subprocess.run(["feast", "apply"], capture_output=True, text=True, cwd=str(FEATURE_STORE_REPO))
