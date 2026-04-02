@@ -1,0 +1,13 @@
+._*
+feature_store/__pycache__/
+feature_store/registry/
+feature_store/data/
+feature_store/online_store/
+mlflow/mlflow.db
+mlflow/mlruns/
+logs/
+src/__pycache__/
+__pycache__/
+data/
+*ipynb
+.env
