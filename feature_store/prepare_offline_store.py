@@ -34,7 +34,8 @@ def prepare_offline_store():
             current['n_readings']       = int(len(window))
             records.append(current)
 
-        # Overwrite the last record with the future prediction row when this group produced rows.
+        # Inventamos una fila "futura" para cada pozo, con fecha un mes después de la última fecha disponible, y sin valores de producción. 
+        # Esto permite que el online store tenga una fila de contexto para hacer predicciones "hacia adelante"
         if len(records) > records_before_group:
             records[-1]['fecha']    = records[-1]['fecha'] + pd.DateOffset(months=1)
             records[-1]['prod_gas'] = None

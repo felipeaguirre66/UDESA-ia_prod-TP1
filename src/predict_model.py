@@ -1,85 +1,186 @@
-import os
-import pickle
+from typing import Any
+
+import mlflow
 import pandas as pd
 from feast import FeatureStore
 
-FEATURE_STORE_REPO = "./feature_store"
-MODELS_DIR = "./models"
+from src.config import (
+  FEATURE_STORE_REPO,
+  MLFLOW_TRACKING_URI,
+  PARQUET_PATH,
+  PREDICT_MODEL_ALIAS,
+  PREDICT_MODEL_NAME,
+  PREDICT_MODEL_VERSION,
+)
+
+ONLINE_FEATURES = [
+  "well_stats:tipoextraccion",
+  "well_stats:avg_prod_gas_10m",
+  "well_stats:avg_prod_pet_10m",
+  "well_stats:last_prod_gas",
+  "well_stats:last_prod_pet",
+  "well_stats:n_readings",
+]
+MODEL_FEATURES = [
+  "tipoextraccion",
+  "avg_prod_gas_10m",
+  "avg_prod_pet_10m",
+  "last_prod_gas",
+  "last_prod_pet",
+  "n_readings",
+]
 
 
-def _get_latest_model_path(models_dir: str) -> str:
-  if not os.path.isdir(models_dir):
-    raise FileNotFoundError(f"No existe el directorio de modelos: {models_dir}")
+def _load_model() -> Any:
+  mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 
-  model_files = [
-    f for f in os.listdir(models_dir)
-    if f.endswith(".pkl") and os.path.isfile(os.path.join(models_dir, f))
-  ]
-  if not model_files:
-    raise FileNotFoundError(f"No se encontraron archivos .pkl en: {models_dir}")
+  if PREDICT_MODEL_VERSION is not None:
+    model_uri = f"models:/{PREDICT_MODEL_NAME}/{PREDICT_MODEL_VERSION}"
+  else:
+    model_uri = f"models:/{PREDICT_MODEL_NAME}@{PREDICT_MODEL_ALIAS}"
 
-  # Ordenamos por prefijo fecha (YYYY-MM-DD) y, como desempate, por mtime.
-  def _sort_key(filename: str):
-    date_part = filename.split("__", 1)[0]
-    parsed = pd.to_datetime(date_part, errors="coerce")
-    ts = parsed.value if pd.notna(parsed) else -1
-    mtime = os.path.getmtime(os.path.join(models_dir, filename))
-    return (ts, mtime)
+  return mlflow.sklearn.load_model(model_uri)
 
-  latest_file = max(model_files, key=_sort_key)
-  return os.path.join(models_dir, latest_file)
 
-def predict():
+def _build_model_input(
+    tipoextraccion: Any,
+    avg_prod_gas_10m: Any,
+    avg_prod_pet_10m: Any,
+    last_prod_gas: Any,
+    last_prod_pet: Any,
+    n_readings: Any,
+    model: Any,
+) -> pd.DataFrame:
+  row = {
+    "tipoextraccion": tipoextraccion,
+    "avg_prod_gas_10m": float(avg_prod_gas_10m) if pd.notna(avg_prod_gas_10m) else 0.0,
+    "avg_prod_pet_10m": float(avg_prod_pet_10m) if pd.notna(avg_prod_pet_10m) else 0.0,
+    "last_prod_gas": float(last_prod_gas) if pd.notna(last_prod_gas) else 0.0,
+    "last_prod_pet": float(last_prod_pet) if pd.notna(last_prod_pet) else 0.0,
+    "n_readings": int(max(1, min(10, int(n_readings) if pd.notna(n_readings) else 10))),
+  }
 
-  store = FeatureStore(repo_path=FEATURE_STORE_REPO)
-  idpozo_ejemplo = 132879
-
-  latest_model_path = _get_latest_model_path(MODELS_DIR)
-  print(f"Cargando modelo mas reciente: {latest_model_path}")
-  with open(latest_model_path, "rb") as f:
-    model = pickle.load(f)
-
-  print(f"Consultando contexto online para el pozo {idpozo_ejemplo}...")
-  online_features = store.get_online_features(
-    features=[
-      "well_stats:tipoextraccion",
-      "well_stats:avg_prod_gas_10m",
-      "well_stats:avg_prod_pet_10m",
-      "well_stats:last_prod_gas",
-      "well_stats:last_prod_pet",
-      "well_stats:n_readings",
-    ],
-    entity_rows=[{"idpozo": idpozo_ejemplo}],
-  ).to_df()
-
-  X_df = online_features[
-    [
-      "tipoextraccion",
-      "avg_prod_gas_10m",
-      "avg_prod_pet_10m",
-      "last_prod_gas",
-      "last_prod_pet",
-      "n_readings",
-    ]
-  ].copy()
-
-  # Aplicamos el mismo encoding usado durante entrenamiento.
+  X_df = pd.DataFrame([row], columns=MODEL_FEATURES)
   X_df = pd.get_dummies(X_df, columns=["tipoextraccion"], drop_first=False)
   X_df = X_df.fillna(0)
 
-  # Alineamos columnas para evitar mismatch entre train/predict.
   if hasattr(model, "feature_names_in_"):
     expected_cols = list(model.feature_names_in_)
     X_df = X_df.reindex(columns=expected_cols, fill_value=0)
 
+  return X_df
+
+
+def _predict_from_context_row(row: pd.Series, model: Any) -> float:
+  X_df = _build_model_input(
+    tipoextraccion=row.get("tipoextraccion"),
+    avg_prod_gas_10m=row.get("avg_prod_gas_10m"),
+    avg_prod_pet_10m=row.get("avg_prod_pet_10m"),
+    last_prod_gas=row.get("last_prod_gas"),
+    last_prod_pet=row.get("last_prod_pet"),
+    n_readings=row.get("n_readings"),
+    model=model,
+  )
   pred = float(model.predict(X_df)[0])
-  print(f"Prediccion prod_gas para idpozo={idpozo_ejemplo}: {pred:.4f}")
+  return max(0.0, pred)
+
+
+def _get_online_reference_date(id_well: int) -> pd.Timestamp | None:
+  # Online store is populated from the latest row in offline parquet, so this date
+  # acts as the reference date that online features represent.
+  offline_df = pd.read_parquet(PARQUET_PATH, columns=["idpozo", "fecha"])
+  offline_df = offline_df[offline_df["idpozo"] == int(id_well)].copy()
+  if offline_df.empty:
+    return None
+
+  offline_df["fecha"] = pd.to_datetime(offline_df["fecha"])
+  return offline_df["fecha"].max().to_period("M").to_timestamp()
+
+
+def _load_offline_rows_for_range(id_well: int, forecast_dates: pd.DatetimeIndex) -> pd.DataFrame:
+  offline_df = pd.read_parquet(PARQUET_PATH)
+  offline_df["fecha"] = pd.to_datetime(offline_df["fecha"]).dt.to_period("M").dt.to_timestamp()
+
+  rows = offline_df[
+    (offline_df["idpozo"] == int(id_well)) &
+    (offline_df["fecha"].isin(forecast_dates))
+  ].copy()
+
+  requested_set = set(forecast_dates)
+  found_set = set(rows["fecha"])
+  missing = sorted(requested_set - found_set)
+  if missing:
+    missing_dates = ", ".join(d.strftime("%Y-%m-%d") for d in missing)
+    raise ValueError(
+      "No hay contexto suficiente en offline store para todas las fechas solicitadas. "
+      f"Fechas faltantes para id_well={id_well}: {missing_dates}"
+    )
+
+  return rows.sort_values("fecha").reset_index(drop=True)
+
+
+def predict(
+    id_well: int,
+    date_start: str,
+    date_end: str,
+):
+  start = pd.Timestamp(date_start).to_period("M").to_timestamp()
+  end = pd.Timestamp(date_end).to_period("M").to_timestamp()
+  if start > end:
+    raise ValueError("date_start debe ser menor o igual a date_end.")
+
+  forecast_dates = pd.date_range(start=start, end=end, freq="MS")
+  if forecast_dates.empty:
+    return {"id_well": int(id_well), "forecast": []}
+
+  model = _load_model()
+  store = FeatureStore(repo_path=FEATURE_STORE_REPO)
+  online_reference_date = _get_online_reference_date(id_well=id_well)
+
+  # Use online features only when the requested range matches exactly the online context date.
+  use_online = (
+    online_reference_date is not None and
+    len(forecast_dates) == 1 and
+    forecast_dates[0] == online_reference_date
+  )
+
+  forecast = []
+  if use_online:
+    online_features = store.get_online_features(
+      features=ONLINE_FEATURES,
+      entity_rows=[{"idpozo": int(id_well)}],
+    ).to_df()
+
+    if online_features.empty:
+      raise ValueError(f"No se encontraron features online para id_well={id_well}.")
+
+    row = online_features.iloc[0]
+    pred = _predict_from_context_row(row=row, model=model)
+    forecast.append({"date": forecast_dates[0].strftime("%Y-%m-%d"), "prod": pred})
+  else:
+    offline_rows = _load_offline_rows_for_range(id_well=id_well, forecast_dates=forecast_dates)
+    for _, row in offline_rows.iterrows():
+      pred = _predict_from_context_row(row=row, model=model)
+      forecast.append({"date": row["fecha"].strftime("%Y-%m-%d"), "prod": pred})
+
   return {
-    "idpozo": idpozo_ejemplo,
-    "model_path": latest_model_path,
-    "prediction": pred,
+    "id_well": int(id_well),
+    "forecast": forecast,
   }
 
 
 if __name__ == "__main__":
-  predict()
+  import argparse
+
+  parser = argparse.ArgumentParser()
+  parser.add_argument("--id_well", type=int, required=True)
+  parser.add_argument("--date_start", type=str, required=True)
+  parser.add_argument("--date_end", type=str, required=True)
+  args = parser.parse_args()
+
+  result = predict(
+    id_well=args.id_well,
+    date_start=args.date_start,
+    date_end=args.date_end,
+  )
+  print(result)
