@@ -12,6 +12,6 @@ MLFLOW_TRACKING_URI = "http://mlflow:9090"
 # Global model selector for predict().
 # - If PREDICT_MODEL_VERSION is set, that version is loaded.
 # - Otherwise, alias PREDICT_MODEL_ALIAS is loaded.
-PREDICT_MODEL_NAME = "prod_gas__random_forest"
+PREDICT_MODEL_NAME = "__random_forest"
 PREDICT_MODEL_ALIAS = "champion"
 PREDICT_MODEL_VERSION = None

@@ -9,6 +9,7 @@ def populate_online_store():
 
   feat_df = pd.read_parquet(PARQUET_PATH)
   latest_df = feat_df.sort_values('fecha').groupby('idpozo').tail(1)
+
   
   store = FeatureStore(repo_path=str(FEATURE_STORE_REPO))
   store.write_to_online_store(

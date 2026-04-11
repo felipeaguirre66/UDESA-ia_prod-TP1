@@ -11,6 +11,14 @@
 5. docker compose up -d
 6. ejecutar el dag `ml_pipeline` desde Airflow
 
+Para próximos usos: `docker compose up -d`
+
+## Pasos para predecir el rendimiento de un pozo para un rango de fechas específico:
+- Ejecutar en terminal: 
+    `docker exec tp1-airflow-worker-1 python /opt/airflow/src/predict_model.py --target TARGET --id_well ID_WELL --date_start DATE_START --date_end DATE_END`
+    - Ejemplo de un pozo y fecha para aprovechamiento de online store: `docker exec tp1-airflow-worker-1 python /opt/airflow/src/predict_model.py --target prod_pet --id_well 96639 --date_start 2026-03-31 --date_end 2026-03-31`
+    - Ejemplo de un pozo y fecha para uso de offline store: `docker exec tp1-airflow-worker-1 python /opt/airflow/src/predict_model.py --target prod_gas --id_well 96639 --date_start 2025-10-31 --date_end 2025-11-30`
+
 ## Pasos para re-entrenar un modelo de una fecha específica:
 - Ejecutar en terminal: `docker compose exec airflow-worker python src/train_model.py --target TARGET --training_date FECHA --save_as_champion BOOL`
     - Ejemplo de uso: `docker compose exec airflow-worker python src/train_model.py --target prod_gas --training_date 2024-06-01 --save_as_champion false`
