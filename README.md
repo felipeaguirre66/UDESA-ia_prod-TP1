@@ -13,6 +13,10 @@
 
 Para próximos usos: `docker compose up -d`
 
+Una vez levantado:
+- Airflow: http://localhost:8080 (usuario: `airflow`, contraseña: `airflow`)
+- MLflow: http://localhost:9191
+
 ## Pasos para predecir el rendimiento de un pozo para un rango de fechas específico:
 - Ejecutar en terminal: 
     `docker exec tp1-airflow-worker-1 python /opt/airflow/src/predict_model.py --target TARGET --id_well ID_WELL --date_start DATE_START --date_end DATE_END`
