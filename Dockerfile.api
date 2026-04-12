@@ -1,0 +1,18 @@
+# Imagen dedicada al servicio HTTP de pronóstico (forecast-api).
+# No usa la imagen de Airflow: la API es un proceso distinto (Uvicorn/FastAPI) con un
+# árbol de dependencias propio (Feast + MLflow + FastAPI deben resolverse con versiones
+# fijadas en requirements-api.txt). Ver README sección "Dependencias: servicio API vs Airflow".
+
+FROM python:3.12-slim
+
+WORKDIR /opt/airflow
+
+COPY requirements-api.txt .
+RUN pip install --no-cache-dir -r requirements-api.txt
+
+EXPOSE 8000
+
+# Misma convención de rutas que el worker de Airflow (volúmenes ./src, ./feature_store, ./data).
+ENV PYTHONPATH=/opt/airflow
+
+CMD ["uvicorn", "src.api_main:app", "--host", "0.0.0.0", "--port", "8000"]

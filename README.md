@@ -4,6 +4,19 @@
 2. [Listado de pozos cargados por empresas operadoras](http://datos.energia.gob.ar/dataset/c846e79c-026c-4040-897f-1ad3543b407c/archivo/cbfa4d79-ffb3-4096-bab5-eb0dde9a8385)
 
 ## Pasos para setear la app la primera vez:
+
+### Entorno: OS y Docker
+
+- **Linux / macOS**: usá `AIRFLOW_UID=$(id -u)` en el `.env` (si hay permisos raros en volúmenes, probá `50000`).
+
+- **Windows (PowerShell/CMD)**: `AIRFLOW_UID=50000` en `.env`; ejecutá `docker compose` desde esta terminal (Docker Desktop encendido).
+
+- **WSL2**: activá la distro en Docker Desktop → *Settings → Resources → WSL integration*; si no hay `docker`, usá PowerShell en `C:\...` del proyecto.
+
+- **Nombre del worker**: el contenedor no siempre es `tp1-airflow-worker-1`; mirá `docker ps` y usá el nombre real.
+
+## Pasos a seguir:
+
 1. echo -e "AIRFLOW_UID=$(id -u)" > .env
 2. echo "_PIP_ADDITIONAL_REQUIREMENTS=pandas scikit-learn mlflow pyarrow" >> .env
 3. echo "_PIP_ADDITIONAL_REQUIREMENTS_WORKER=pandas scikit-learn mlflow pyarrow feast" >> .env
@@ -16,6 +29,22 @@ Para próximos usos: `docker compose up -d`
 Una vez levantado:
 - Airflow: http://localhost:8080 (usuario: `airflow`, contraseña: `airflow`)
 - MLflow: http://localhost:9191
+- API de pronóstico (RFC): http://localhost:8000 — documentación OpenAPI (Swagger): http://localhost:8000/docs — ReDoc: http://localhost:8000/redoc
+
+Tras el primer `docker compose up -d`, conviene construir el servicio de la API si no existe la imagen: `docker compose build forecast-api` y luego `docker compose up -d`.
+
+## API REST (`forecast-api`)
+
+Endpoints alineados al trabajo integrador (`GET /api/v1/forecast`, `GET /api/v1/wells`). Query opcional `target`: `prod_gas` (default) o `prod_pet`.
+
+Ejemplos (con el stack levantado y el DAG `ml_pipeline` ejecutado al menos una vez):
+
+```bash
+curl "http://localhost:8000/api/v1/forecast?id_well=96639&date_start=2025-10-01&date_end=2025-11-01&target=prod_gas"
+curl "http://localhost:8000/api/v1/wells?date_query=2025-10-01"
+```
+
+La respuesta de pronóstico usa el campo `data` (array de `date` / `prod`) según la especificación OpenAPI del enunciado.
 
 ## Pasos para predecir el rendimiento de un pozo para un rango de fechas específico:
 - Ejecutar en terminal: 
