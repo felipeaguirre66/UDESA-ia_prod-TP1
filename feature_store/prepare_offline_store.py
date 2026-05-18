@@ -34,12 +34,14 @@ def prepare_offline_store():
             current['n_readings']       = int(len(window))
             records.append(current)
 
-        # Inventamos una fila "futura" para cada pozo, con fecha un mes después de la última fecha disponible, y sin valores de producción. 
-        # Esto permite que el online store tenga una fila de contexto para hacer predicciones "hacia adelante"
+        # Inventamos una fila "futura" para cada pozo, con fecha un mes después de la última fecha disponible,
+        # y sin valores de producción. Debe agregarse como nueva fila para no pisar el último registro real.
         if len(records) > records_before_group:
-            records[-1]['fecha']    = records[-1]['fecha'] + pd.DateOffset(months=1)
-            records[-1]['prod_gas'] = None
-            records[-1]['prod_pet'] = None
+            future_row = records[-1].copy()
+            future_row['fecha'] = future_row['fecha'] + pd.DateOffset(months=1)
+            future_row['prod_gas'] = None
+            future_row['prod_pet'] = None
+            records.append(future_row)
         
     feat_df = pd.DataFrame(records)
     #TODO: remove this, use only for memory issues
