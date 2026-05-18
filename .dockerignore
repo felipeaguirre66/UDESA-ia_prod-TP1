@@ -1,0 +1,12 @@
+# macOS metadata files (AppleDouble) can break Docker context upload on external drives
+._*
+**/._*
+.DS_Store
+
+# Python cache artifacts
+__pycache__/
+*.py[cod]
+
+# Local runtime outputs not needed in image build context
+logs/
+mlflow/
