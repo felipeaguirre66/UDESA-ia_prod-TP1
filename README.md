@@ -78,16 +78,30 @@ Obtiene el pronostico de produccion para un pozo y rango de fechas.
 
 **Ejemplo**:
 ```bash
-curl "http://localhost:8000/api/v1/forecast?id_well=96639&date_start=2025-10-01&date_end=2025-11-01&target=prod_gas"
+curl "http://localhost:8000/api/v1/forecast?id_well=166216&date_start=2025-12-01&date_end=2026-03-01&target=prod_gas"
 ```
 
 **Respuesta**:
 ```json
 {
-  "id_well": "96639",
+  "id_well": "166216",
   "data": [
-    {"date": "2025-10-01", "prod": 1523.45},
-    {"date": "2025-11-01", "prod": 1487.20}
+    {
+      "date": "2025-12-01",
+      "prod": 115.33212924999981
+    },
+    {
+      "date": "2026-01-01",
+      "prod": 125.75198084999992
+    },
+    {
+      "date": "2026-02-01",
+      "prod": 84.77035059999984
+    },
+    {
+      "date": "2026-03-01",
+      "prod": 99.98216595000031
+    }
   ]
 }
 ```
@@ -107,8 +121,9 @@ curl "http://localhost:8000/api/v1/wells?date_query=2025-10-01"
 **Respuesta**:
 ```json
 [
-  {"id_well": "96639"},
-  {"id_well": "132879"}
+  {"id_well": "159533"},
+  {"id_well": "159558"},
+  {"id_well": "163437"}
 ]
 ```
 
@@ -123,11 +138,11 @@ curl "http://localhost:8000/api/v1/wells?date_query=2025-10-01"
 
 # Prediccion para el mes actual (usa online store - rapido)
 docker exec tp1-airflow-worker-1 python /opt/airflow/src/predict_model.py \
-  --target prod_gas --id_well 96639 --date_start 2026-03-31 --date_end 2026-03-31
+  --target prod_gas --id_well 96639 --date_start 2026-04-01 --date_end 2026-04-30
 
 # Prediccion para un rango historico (usa offline store)
 docker exec tp1-airflow-worker-1 python /opt/airflow/src/predict_model.py \
-  --target prod_gas --id_well 96639 --date_start 2024-10-01 --date_end 2024-12-01
+  --target prod_gas --id_well 166216 --date_start 2025-12-01 --date_end 2026-03-01
 ```
 
 Nota: Es preferible usar la API REST (`/api/v1/forecast`) en vez de ejecutar el script directamente.
