@@ -119,6 +119,7 @@ services:
       - ${AIRFLOW_PROJ_DIR:-.}/src:/opt/airflow/src
       - ${AIRFLOW_PROJ_DIR:-.}/feature_store:/opt/airflow/feature_store
       - ${AIRFLOW_PROJ_DIR:-.}/data:/opt/airflow/data
+      - ${AIRFLOW_PROJ_DIR:-.}/mlflow:/mlflow
     depends_on:
       - mlflow
     restart: unless-stopped
