@@ -1,3 +1,5 @@
+import pendulum
+
 from airflow.decorators import dag, task
 from airflow.operators.empty import EmptyOperator
 from feature_store.prepare_offline_store import download_data, prepare_offline_store
@@ -8,6 +10,9 @@ from src.train_model import train_model
 @dag(
     dag_id='ml_pipeline',
     description='Pipeline de Machine Learning con Airflow',
+    schedule='0 0 1 * *',
+    start_date=pendulum.datetime(2026, 1, 1, tz='UTC'),
+    catchup=False,
 )
 def ml_pipeline():
 
