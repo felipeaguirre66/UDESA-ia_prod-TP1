@@ -5,30 +5,18 @@ import pandas as pd
 from feast import FeatureStore
 
 from src.config import (
+  CATEGORICAL_FEATURE,
   FEATURE_STORE_REPO,
+  MODEL_FEATURES,
   MLFLOW_TRACKING_URI,
+  NUMERICAL_FEATURES,
   PARQUET_PATH,
   PREDICT_MODEL_ALIAS,
   PREDICT_MODEL_NAME,
   PREDICT_MODEL_VERSION,
 )
 
-ONLINE_FEATURES = [
-  "well_stats:tipoextraccion",
-  "well_stats:avg_prod_gas_10m",
-  "well_stats:avg_prod_pet_10m",
-  "well_stats:last_prod_gas",
-  "well_stats:last_prod_pet",
-  "well_stats:n_readings",
-]
-MODEL_FEATURES = [
-  "tipoextraccion",
-  "avg_prod_gas_10m",
-  "avg_prod_pet_10m",
-  "last_prod_gas",
-  "last_prod_pet",
-  "n_readings",
-]
+ONLINE_FEATURES = [f"well_stats:{feature}" for feature in MODEL_FEATURES]
 
 
 def _load_model(target: str) -> Any:
@@ -62,7 +50,7 @@ def _build_model_input(
   }
 
   X_df = pd.DataFrame([row], columns=MODEL_FEATURES)
-  X_df = pd.get_dummies(X_df, columns=["tipoextraccion"], drop_first=False)
+  X_df = pd.get_dummies(X_df, columns=[CATEGORICAL_FEATURE], drop_first=False)
   X_df = X_df.fillna(0)
 
   if hasattr(model, "feature_names_in_"):

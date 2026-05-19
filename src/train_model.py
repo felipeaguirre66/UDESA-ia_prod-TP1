@@ -3,7 +3,7 @@ import pandas as pd
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import r2_score, mean_squared_error
-from src.config import FEATURE_STORE_REPO, PARQUET_PATH#, MODELS_DIR
+from src.config import FEATURE_STORE_REPO, PARQUET_PATH, MODEL_FEATURES, CATEGORICAL_FEATURE#, MODELS_DIR
 
 def train_model(
         target: str = 'prod_gas', # prod_gas o prod_pet
@@ -28,11 +28,7 @@ def train_model(
     entity_df = entity_df[entity_df['fecha'] <= cutoff]
     entity_df = entity_df.rename(columns={'fecha': 'event_timestamp'})
 
-    features = [
-        'tipoextraccion', 'avg_prod_gas_10m', 
-        'avg_prod_pet_10m',
-        'last_prod_gas', 'last_prod_pet', 'n_readings'
-    ]
+    features = list(MODEL_FEATURES)
     feast_features = [f"well_stats:{f}" for f in features]
 
     print("Obteniendo features históricas desde el Feature Store...")
@@ -51,7 +47,7 @@ def train_model(
     y = training_df[target]
 
     # Handle string categorical feature in training.
-    X = pd.get_dummies(X, columns=['tipoextraccion'], drop_first=False)
+    X = pd.get_dummies(X, columns=[CATEGORICAL_FEATURE], drop_first=False)
     X = X.fillna(0)
 
     fecha = pd.Timestamp.now().strftime("%Y-%m-%d")
