@@ -1,6 +1,7 @@
 project: oil_gas_production
 registry: registry/registry.db
 provider: local
+entity_key_serialization_version: 3
 offline_store:
   type: file
 online_store:

@@ -1,0 +1,8 @@
+# Custom Airflow image with project dependencies preinstalled.
+FROM apache/airflow:3.1.7
+
+USER airflow
+WORKDIR /opt/airflow
+
+COPY --chown=airflow:root requirements-airflow.txt /opt/airflow/requirements-airflow.txt
+RUN pip install --no-cache-dir -r /opt/airflow/requirements-airflow.txt
