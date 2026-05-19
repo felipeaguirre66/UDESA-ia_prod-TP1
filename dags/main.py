@@ -39,7 +39,15 @@ def ml_pipeline():
         train_model(target='prod_gas', save_as_champion=True)
         train_model(target='prod_pet', save_as_champion=True)
 
+    @task
+    def monitoring_task():
+        from monitoring.data_driff import run_data_driff
+        from monitoring.model_decay import run_model_decay
+        run_data_driff()
+        run_model_decay(target='prod_gas')
+        run_model_decay(target='prod_pet')
+
     # Pipeline: Chain all tasks in order
-    start >> download_data_task() >> prepare_offline_store_task() >> apply_feast_task() >> populate_online_store_task() >> train_model_task()
+    start >> download_data_task() >> prepare_offline_store_task() >> apply_feast_task() >> populate_online_store_task() >> train_model_task() >> monitoring_task()
 
 ml_pipeline()
