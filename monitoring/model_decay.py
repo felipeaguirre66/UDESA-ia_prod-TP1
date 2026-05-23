@@ -19,7 +19,14 @@ WINDOW_MONTHS = 2
 MIN_ROWS = 100
 DEFAULT_TARGET = "prod_gas"
 MIN_ANALYSIS_DATE = pd.Timestamp("2025-01-01")
-MAE_THRESHOLD = 155
+MAE_THRESHOLDS = {
+  "prod_gas": 155,
+  "prod_pet": 90,
+}
+
+
+def _get_mae_threshold(target: str) -> float:
+  return MAE_THRESHOLDS.get(target, MAE_THRESHOLDS[DEFAULT_TARGET])
 
 
 def _load_dataset(target: str) -> pd.DataFrame:
@@ -124,6 +131,8 @@ def _build_windows(df: pd.DataFrame, window_months: int = WINDOW_MONTHS) -> list
 
 
 def run_model_decay(target: str = DEFAULT_TARGET, window_months: int = WINDOW_MONTHS) -> dict:
+  mae_threshold = _get_mae_threshold(target)
+
   print("[model_decay] Loading dataset and building leakage-safe features...", flush=True)
   df = _load_dataset(target=target)
   print(f"[model_decay] Dataset ready: rows={len(df)}, min_date={df['fecha'].min().date()}, max_date={df['fecha'].max().date()}", flush=True)
@@ -193,21 +202,20 @@ def run_model_decay(target: str = DEFAULT_TARGET, window_months: int = WINDOW_MO
     table_df[col] = table_df[col].apply(lambda x: x.strftime("%Y-%m-%d") if pd.notna(x) else "-")
   table_df["mae"] = table_df["mae"].map(lambda x: f"{x:.6f}" if pd.notna(x) else "-")
 
-  status_label = "WARNING" if (summary_df["status"] == "trained").any() and (summary_df["status"] == "skipped").any() else "INFO"
   first_window = summary_df[summary_df["window_index"] == 1]
   first_window_decay_warning = (
     (not first_window.empty)
     and (first_window.iloc[0]["status"] == "trained")
     and pd.notna(first_window.iloc[0]["mae"])
-    and float(first_window.iloc[0]["mae"]) < MAE_THRESHOLD
+    and float(first_window.iloc[0]["mae"]) > mae_threshold
   )
-  first_line = "WARNING: model decay" if first_window_decay_warning else f"{status_label} model_decay"
+  first_line = "WARNING: model decay" if first_window_decay_warning else "INFO model_decay"
   log_lines = [
     first_line,
     f"target={target}",
     f"window_months={window_months}",
     f"min_rows={MIN_ROWS}",
-    f"mae_threshold={MAE_THRESHOLD}",
+    f"mae_threshold={mae_threshold}",
     f"min_analysis_date={MIN_ANALYSIS_DATE.strftime('%Y-%m-%d')}",
     f"dataset_rows={len(df)}",
     f"dataset_date_start={df['fecha'].min().strftime('%Y-%m-%d')}",
