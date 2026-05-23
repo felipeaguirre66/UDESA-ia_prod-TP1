@@ -205,9 +205,9 @@ El reporte de **Model Decay**, especialmente en la ventana más reciente, permit
 ### Decisiones de diseño implementadas
 
 - **Windowing temporal sin leakage**: para cada ventana de test, el entrenamiento usa solo datos con fecha estrictamente anterior al inicio de la ventana de test.
-- **Ventanas de decay**: tamaño configurable (`WINDOW_MONTHS`, default actual `2`) y análisis acotado desde `MIN_ANALYSIS_DATE` (actual `2025-01-01`) para mantener tiempos de ejecución razonables.
+- **Ventanas de decay**: tamaño configurable (`WINDOW_MONTHS`, default actual `2`) y análisis acotado desde `MIN_ANALYSIS_DATE` (actual `2025-01-01`) para mantener tiempos de ejecución razonables. La elección de WINDOW_MONTHS=2 por default se debe a que es una ventana de tiempo suficientemente corta como para conocer el rendimiento actual del modelo y suficientemente larga como para que no sea una estimación ruidosa.
 - **Control de calidad de muestra**: si `train` o `test` tienen menos de `100` filas, esa ventana se marca como `skipped` y no se entrena.
-- **Umbral operativo de decay**: `MAE_THRESHOLD=155`; si la primera iteración entrenada cae bajo ese umbral, el log comienza con `WARNING: model decay`.
+- **Umbral operativo de decay**: `MAE_THRESHOLD`; si la primera iteración entrenada cae bajo ese umbral, el log comienza con `WARNING: model decay`.
 - **Trazabilidad de artefactos**: todos los archivos en `monitoring/logs/` se guardan con prefijo de fecha para evitar sobreescrituras. En `model_decay`, además incluyen el `target` en el nombre para separar `prod_gas` y `prod_pet`.
 
 ### Salidas

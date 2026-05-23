@@ -78,7 +78,7 @@ def run_data_driff(
   level = "WARNING" if has_significant else "INFO"
 
   date_prefix = pd.Timestamp.now().strftime("%Y-%m-%d")
-  log_path = Path(__file__).resolve().parent / "logs" / f"{date_prefix} logile.log"
+  log_path = Path(__file__).resolve().parent / "logs" / f"{date_prefix} data_driff.log"
   log_path.parent.mkdir(parents=True, exist_ok=True)
   lines = [
     f"{level} data_driff",
