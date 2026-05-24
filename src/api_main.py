@@ -11,11 +11,38 @@ from pydantic import BaseModel, Field
 
 from src.config import PARQUET_PATH
 from src.predict_model import predict
+import ray
+from ray import serve
+from contextlib import asynccontextmanager
+
+
+# almacena handler para comunicación con Ray Serve
+forecast_handle = None
+
+# función para iniciar y apagar Ray Serve
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Inicializa Ray en background
+    ray.init(ignore_reinit_error=True)
+    # Arranca Ray Serve desactivando el HTTP proxy redundante para evitar colisión de puertos
+    serve.start(proxy_location="Disabled")
+    
+    # Desplega el modelo y guarda el handle de comunicación asincrónica
+    global forecast_handle
+    forecast_handle = serve.run(ForecastModel.bind())
+    
+    yield  # permite que FastAPI quede activo y escuchando peticiones
+    
+    # Apaga todo al detener la API
+    serve.shutdown()
+    ray.shutdown()
+
 
 app = FastAPI(
     title="Oil & Gas Forecast API",
     version="1.0.0",
     description="API para consultar el listado de pozos y pronósticos de producción.",
+    lifespan=lifespan,
 )
 
 
@@ -41,9 +68,21 @@ class WellItem(BaseModel):
 
 TargetLiteral = Literal["prod_gas", "prod_pet"]
 
+@serve.deployment(
+    num_replicas=2,                      # 2 procesos independientes
+    max_queued_requests=100              # pone en cola solicitudes en rafaga
+)
+class ForecastModel:
+    def __init__(self):
+        # aca queda para agregar recursos persistentes en producción
+        pass
+
+    async def predict(self, target: str, id_well: int, date_start: str, date_end: str) -> dict:
+        """Se deriva la request de inferencia a Feast + MLflow"""
+        return predict(target=target, id_well=id_well, date_start=date_start, date_end=date_end)
 
 @app.get("/api/v1/forecast", response_model=ForecastResponse)
-def get_forecast(
+async def get_forecast(
     id_well: Annotated[str, Query(description="Identificador del pozo")],
     date_start: Annotated[str, Query(description="Fecha de inicio (YYYY-MM-DD)")],
     date_end: Annotated[str, Query(description="Fecha de fin (YYYY-MM-DD)")],
@@ -67,7 +106,14 @@ def get_forecast(
         raise HTTPException(status_code=400, detail="id_well debe ser un identificador numérico") from e
 
     try:
-        raw = predict(target=target, id_well=wid, date_start=date_start, date_end=date_end)
+        if forecast_handle is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Ray Serve no está inicializado"
+            )
+        raw = await forecast_handle.predict.remote(
+            target=target, id_well=wid, date_start=date_start, date_end=date_end
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
