@@ -5,7 +5,7 @@ Una plataforma end-to-end para pronosticar la produccion futura de hidrocarburos
 - **Apache Airflow**: Orquestacion del pipeline de ML (descarga datos, calcula features, entrena modelos)
 - **Feast**: Feature Store (almacena y sirve features historicos y en tiempo real)
 - **MLflow**: Tracking de experimentos y model registry (versionado de modelos)
-- **FastAPI**: API REST para consultar pronosticos
+- **FastAPI + Ray Serve**: API REST para consultar pronósticos e inferencia distribuida y escalable en tiempo real.
 
 ## Datos:
 1. [Producción de Pozos de Gas y Petróleo No Convencional](http://datos.energia.gob.ar/dataset/c846e79c-026c-4040-897f-1ad3543b407c/archivo/b5b58cdc-9e07-41f9-b392-fb9ec68b0725)
@@ -141,6 +141,14 @@ curl "http://localhost:8000/api/v1/wells?date_query=2025-10-01"
 ```
 
 **Nota**: La respuesta de pronóstico usa el campo `data` (array de `date` / `prod`) según la especificación OpenAPI del RFC.
+
+## Arquitectura de Inferencia Escalable (Ray Serve)
+
+El servicio `forecast-api` implementa una arquitectura de serving distribuida y altamente escalable utilizando **Ray Serve**, alineada con las decisiones de diseño analizadas en la **Clase 5 - Serving de Modelos**:
+
+* **Integración Programática (Lifespan):** El clúster local de Ray y el engine de Serve se controlan directamente dentro del ciclo de vida (`lifespan`) de FastAPI. Se inician al arrancar el contenedor y se apagan limpiamente al detenerlo.
+* **Único Punto de Entrada (Single Ingress):** Se configuró `proxy_location="Disabled"` en Ray Serve para evitar conflictos de red en Docker. FastAPI sigue siendo el único gateway expuesto en el puerto `8000`, facilitando la centralización de Swagger (`/docs`) y la validación de tipados con Pydantic.
+* **Procesamiento Concurrente y Réplicas:** Ray Serve levanta **2 réplicas independientes** del modelo (`ForecastModel`) en memoria, balanceando la carga en paralelo mediante descriptores asíncronos de gRPC/Shared Memory (`DeploymentHandle`), reduciendo la latencia interna de red a cero.
 
 ## Operaciones comunes
 
