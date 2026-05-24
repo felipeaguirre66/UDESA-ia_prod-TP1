@@ -29,22 +29,23 @@ Una plataforma end-to-end para pronosticar la produccion futura de hidrocarburos
 ```bash
 # En Linux/macOS
 echo -e "AIRFLOW_UID=$(id -u)" > .env
-echo "_PIP_ADDITIONAL_REQUIREMENTS=pandas scikit-learn mlflow pyarrow" >> .env
-echo "_PIP_ADDITIONAL_REQUIREMENTS_WORKER=pandas scikit-learn mlflow pyarrow feast" >> .env
 
 # En Windows (PowerShell)
 "AIRFLOW_UID=50000" | Out-File -Encoding UTF8 .env
-"_PIP_ADDITIONAL_REQUIREMENTS=pandas scikit-learn mlflow pyarrow" | Add-Content .env
-"_PIP_ADDITIONAL_REQUIREMENTS_WORKER=pandas scikit-learn mlflow pyarrow feast" | Add-Content .env
 ```
+
+Las dependencias de Python ahora se construyen en imagenes Docker:
+- `Dockerfile.airflow` + `requirements-airflow.txt` para servicios Airflow core
+- `Dockerfile.airflow-worker` + `requirements-airflow-worker.txt` para `airflow-worker`
+- `Dockerfile.api` + `requirements-api.txt` para `forecast-api`
 
 ### 2. Inicializar y levantar los servicios
 
 ```bash
+docker compose build airflow-apiserver airflow-scheduler airflow-dag-processor airflow-worker airflow-triggerer airflow-init airflow-cli flower
+docker compose build forecast-api
 docker compose up airflow-init
 docker compose up -d
-docker compose build forecast-api  # opcional, puede ser necesario en algunos OS
-docker compose up -d                # asegurar que forecast-api corra
 ```
 
 ### 3. Ejecutar el DAG
@@ -52,6 +53,18 @@ docker compose up -d                # asegurar que forecast-api corra
 Ir a http://localhost:8080 (usuario: `airflow`, contraseña: `airflow`) y ejecutar manualmente el DAG `ml_pipeline`.
 
 Para proximos usos solo es necesario usar `docker compose up -d`
+
+### 4. Sobre `dags/main.py`
+
+El archivo `dags/main.py` define el DAG principal `ml_pipeline` y orquesta, en orden, las etapas de:
+
+- descarga de datos,
+- preparación del offline store,
+- aplicación/materialización de Feast,
+- entrenamiento de modelos,
+- monitoreo (drift y model decay).
+
+El DAG está configurado para correr **mensualmente** (`schedule='0 0 1 * *'`) porque el dataset fuente de producción se actualiza con frecuencia mensual. De este modo, el reentrenamiento y el monitoreo se ejecutan con la misma cadencia de disponibilidad de nuevos datos.
 
 ## Acceso a los componentes
 
@@ -78,16 +91,30 @@ Obtiene el pronostico de produccion para un pozo y rango de fechas.
 
 **Ejemplo**:
 ```bash
-curl "http://localhost:8000/api/v1/forecast?id_well=96639&date_start=2025-10-01&date_end=2025-11-01&target=prod_gas"
+curl "http://localhost:8000/api/v1/forecast?id_well=166216&date_start=2025-12-01&date_end=2026-03-01&target=prod_gas"
 ```
 
 **Respuesta**:
 ```json
 {
-  "id_well": "96639",
+  "id_well": "166216",
   "data": [
-    {"date": "2025-10-01", "prod": 1523.45},
-    {"date": "2025-11-01", "prod": 1487.20}
+    {
+      "date": "2025-12-01",
+      "prod": 115.33212924999981
+    },
+    {
+      "date": "2026-01-01",
+      "prod": 125.75198084999992
+    },
+    {
+      "date": "2026-02-01",
+      "prod": 84.77035059999984
+    },
+    {
+      "date": "2026-03-01",
+      "prod": 99.98216595000031
+    }
   ]
 }
 ```
@@ -107,8 +134,9 @@ curl "http://localhost:8000/api/v1/wells?date_query=2025-10-01"
 **Respuesta**:
 ```json
 [
-  {"id_well": "96639"},
-  {"id_well": "132879"}
+  {"id_well": "159533"},
+  {"id_well": "159558"},
+  {"id_well": "163437"}
 ]
 ```
 
@@ -123,11 +151,11 @@ curl "http://localhost:8000/api/v1/wells?date_query=2025-10-01"
 
 # Prediccion para el mes actual (usa online store - rapido)
 docker exec tp1-airflow-worker-1 python /opt/airflow/src/predict_model.py \
-  --target prod_gas --id_well 96639 --date_start 2026-03-31 --date_end 2026-03-31
+  --target prod_gas --id_well 96639 --date_start 2026-04-01 --date_end 2026-04-30
 
 # Prediccion para un rango historico (usa offline store)
 docker exec tp1-airflow-worker-1 python /opt/airflow/src/predict_model.py \
-  --target prod_gas --id_well 96639 --date_start 2024-10-01 --date_end 2024-12-01
+  --target prod_gas --id_well 166216 --date_start 2025-12-01 --date_end 2026-03-01
 ```
 
 Nota: Es preferible usar la API REST (`/api/v1/forecast`) en vez de ejecutar el script directamente.
@@ -154,6 +182,40 @@ El parametro `training_date` es la fecha de corte: el modelo solo ve datos anter
 4. Click en "Aliases" → agregar/cambiar alias `champion`
 
 Esto tambien se puede hacer programaticamente con la API de MLflow.
+
+## Monitoreo de modelos (`monitoring/`)
+
+El proyecto incluye monitoreo de **data drift / concept drift** y **model decay** para detectar desvíos de comportamiento del modelo en producción.
+
+### Qué incluye
+
+- `monitoring/data_driff.py`: reporte de **data drift / concept drift**.
+- `monitoring/model_decay.py`: reporte de **model decay** en ventanas temporales.
+
+### Métricas reportadas
+
+- **Drift numérico**: `KSDrift` (Alibi Detect) por feature numérica.
+- **Drift categórico**: `ChiSquareDrift` (Alibi Detect) para `tipoextraccion`.
+- **Model decay**: `MAE` por ventana temporal de evaluación.
+
+En particular, el reporte de **Drift** permite ver si la distribución de features cambió significativamente en los últimos tres meses respecto del pasado. Tres meses es una ventana de tiempo suficientemente corta como para conocer el estado actual de los features y suficientemente larga como para que no sea una estimación ruidosa.
+
+El reporte de **Model Decay**, especialmente en la ventana más reciente, permite evaluar si el modelo servido sigue siendo adecuado o si conviene volver temporalmente a una versión previa y analizar la causa.
+
+### Decisiones de diseño implementadas
+
+- **Windowing temporal sin leakage**: para cada ventana de test, el entrenamiento usa solo datos con fecha estrictamente anterior al inicio de la ventana de test.
+- **Ventanas de decay**: tamaño configurable (`WINDOW_MONTHS`, default actual `2`) y análisis acotado desde `MIN_ANALYSIS_DATE` (actual `2025-01-01`) para mantener tiempos de ejecución razonables. La elección de WINDOW_MONTHS=2 por default se debe a que es una ventana de tiempo suficientemente corta como para conocer el rendimiento actual del modelo y suficientemente larga como para que no sea una estimación ruidosa.
+- **Control de calidad de muestra**: si `train` o `test` tienen menos de `100` filas, esa ventana se marca como `skipped` y no se entrena.
+- **Umbral operativo de decay**: `MAE_THRESHOLD`; si la primera iteración entrenada cae bajo ese umbral, el log comienza con `WARNING: model decay`.
+- **Trazabilidad de artefactos**: todos los archivos en `monitoring/logs/` se guardan con prefijo de fecha para evitar sobreescrituras. En `model_decay`, además incluyen el `target` en el nombre para separar `prod_gas` y `prod_pet`.
+
+### Salidas
+
+- Drift: `monitoring/logs/[YYYY-MM-DD] logile.log`
+- Decay (por target):
+  - `monitoring/logs/[YYYY-MM-DD] [target] model_decay.log`
+  - `monitoring/logs/[YYYY-MM-DD] [target] model_decay.png`
 
 ## Decisiones de diseno y trade-offs
 

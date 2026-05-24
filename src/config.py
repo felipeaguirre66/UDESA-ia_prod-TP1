@@ -15,3 +15,18 @@ MLFLOW_TRACKING_URI = "http://mlflow:9090"
 PREDICT_MODEL_NAME = "__random_forest"
 PREDICT_MODEL_ALIAS = "champion"
 PREDICT_MODEL_VERSION = None
+
+# Shared feature definitions used across training, inference and monitoring.
+CATEGORICAL_FEATURE = "tipoextraccion"
+NUMERICAL_FEATURES = [
+	"avg_prod_gas_10m",
+	"avg_prod_pet_10m",
+	"last_prod_gas",
+	"last_prod_pet",
+	"n_readings",
+]
+MODEL_FEATURES = [CATEGORICAL_FEATURE, *NUMERICAL_FEATURES]
+
+# Drift monitoring defaults.
+DRIFT_RECENT_MONTHS = 3
+DRIFT_SIGNIFICANCE_LEVEL = 0.05

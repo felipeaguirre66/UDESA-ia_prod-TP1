@@ -1,0 +1,8 @@
+# Custom Airflow worker image with worker-only ML dependencies.
+FROM tp1-airflow-custom:latest
+
+USER airflow
+WORKDIR /opt/airflow
+
+COPY --chown=airflow:root requirements-airflow-worker.txt /opt/airflow/requirements-airflow-worker.txt
+RUN pip install --no-cache-dir -r /opt/airflow/requirements-airflow-worker.txt
