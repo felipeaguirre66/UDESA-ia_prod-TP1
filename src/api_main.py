@@ -82,7 +82,7 @@ class ForecastModel:
         return predict(target=target, id_well=id_well, date_start=date_start, date_end=date_end)
 
 @app.get("/api/v1/forecast", response_model=ForecastResponse)
-def get_forecast(
+async def get_forecast(
     id_well: Annotated[str, Query(description="Identificador del pozo")],
     date_start: Annotated[str, Query(description="Fecha de inicio (YYYY-MM-DD)")],
     date_end: Annotated[str, Query(description="Fecha de fin (YYYY-MM-DD)")],
@@ -106,7 +106,14 @@ def get_forecast(
         raise HTTPException(status_code=400, detail="id_well debe ser un identificador numérico") from e
 
     try:
-        raw = predict(target=target, id_well=wid, date_start=date_start, date_end=date_end)
+        if forecast_handle is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Ray Serve no está inicializado"
+            )
+        raw = await forecast_handle.predict.remote(
+            target=target, id_well=wid, date_start=date_start, date_end=date_end
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
