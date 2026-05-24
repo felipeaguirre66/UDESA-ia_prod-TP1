@@ -13,3 +13,5 @@ data/
 .env
 
 docs/
+.agent_temp/
+venv/

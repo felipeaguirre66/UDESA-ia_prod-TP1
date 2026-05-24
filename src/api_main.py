@@ -11,11 +11,38 @@ from pydantic import BaseModel, Field
 
 from src.config import PARQUET_PATH
 from src.predict_model import predict
+import ray
+from ray import serve
+from contextlib import asynccontextmanager
+
+
+# almacena handler para comunicación con Ray Serve
+forecast_handle = None
+
+# función para iniciar y apagar Ray Serve
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Inicializa Ray en background
+    ray.init(ignore_reinit_error=True)
+    # Arranca Ray Serve desactivando el HTTP proxy redundante para evitar colisión de puertos
+    serve.start(proxy_location="Disabled")
+    
+    # Desplega el modelo y guarda el handle de comunicación asincrónica
+    global forecast_handle
+    forecast_handle = serve.run(ForecastModel.bind())
+    
+    yield  # permite que FastAPI quede activo y escuchando peticiones
+    
+    # Apaga todo al detener la API
+    serve.shutdown()
+    ray.shutdown()
+
 
 app = FastAPI(
     title="Oil & Gas Forecast API",
     version="1.0.0",
     description="API para consultar el listado de pozos y pronósticos de producción.",
+    lifespan=lifespan,
 )
 
 
@@ -41,6 +68,18 @@ class WellItem(BaseModel):
 
 TargetLiteral = Literal["prod_gas", "prod_pet"]
 
+@serve.deployment(
+    num_replicas=2,                      # 2 procesos independientes
+    max_queued_requests=100              # pone en cola solicitudes en rafaga
+)
+class ForecastModel:
+    def __init__(self):
+        # aca queda para agregar recursos persistentes en producción
+        pass
+
+    async def predict(self, target: str, id_well: int, date_start: str, date_end: str) -> dict:
+        """Se deriva la request de inferencia a Feast + MLflow"""
+        return predict(target=target, id_well=id_well, date_start=date_start, date_end=date_end)
 
 @app.get("/api/v1/forecast", response_model=ForecastResponse)
 def get_forecast(

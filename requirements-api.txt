@@ -6,3 +6,4 @@ scikit-learn==1.5.2
 mlflow==3.10.1
 feast==0.48.1
 pydantic==2.10.6
+ray[serve]>=2.35.0
